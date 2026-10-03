@@ -1,0 +1,13 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "voice-call": {
+        "type": "local",
+        "command": ["voice-call", "mcp"],
+        "environment": { "OPENAI_API_KEY": "{env:OPENAI_API_KEY}" },
+        "timeout": { "execution": 960000 }
+      }
+    }
+  }
+}

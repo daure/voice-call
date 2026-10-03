@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src 'self' blob:; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Voice Call</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header><span class="eyebrow">OPENCODE · VOICE COMPANION</span><span id="badge">Ready</span></header>
+  <main>
+    <section class="call-card" aria-labelledby="heading">
+      <div id="indicator" aria-hidden="true">◉</div>
+      <h1 id="heading">Your agent is a call away.</h1>
+      <p id="status" role="status" aria-live="polite">Waiting for a call from OpenCode.</p>
+      <div class="actions">
+        <button id="answer" disabled>Answer</button>
+        <button id="reject" disabled>Reject</button>
+        <button id="hangup" hidden>Hang up</button>
+      </div>
+      <audio id="audio" autoplay></audio>
+    </section>
+    <details id="context-panel">
+      <summary>Initial context <span>What your agent wants to discuss</span></summary>
+      <pre id="context">The caller’s context and questions will appear here.</pre>
+    </details>
+    <section class="transcript-card" aria-labelledby="transcript-heading">
+      <div class="section-heading"><h2 id="transcript-heading">Conversation</h2><span>LIVE TRANSCRIPT</span></div>
+      <div id="history" role="log" aria-live="polite"><p class="empty">Your words and the assistant’s replies will appear here.</p></div>
+    </section>
+  </main>
+  <footer>Microphone access starts when you answer. Audio and tool results go to OpenAI.<br>Calls use paid API credits. The transcript stays in memory for review.</footer>
+  <script type="module" src="renderer.mjs"></script>
+</body>
+</html>
