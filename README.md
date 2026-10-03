@@ -18,7 +18,7 @@ export PATH="$HOME/.local/bin:$PATH"
 voice-call doctor
 ```
 
-The installer verifies SHA-256 before staging the archive. It installs versioned bundles in `${XDG_DATA_HOME:-$HOME/.local/share}/voice-call/versions/` and exposes `voice-call` through `~/.local/bin`. It does not require sudo or store credentials. Add `~/.local/bin` to your shell's PATH permanently if needed. Override locations with absolute `VOICE_CALL_INSTALL_DIR` and `VOICE_CALL_BIN_DIR` values; use `VOICE_CALL_VERSION=1.0.0` to choose a published version.
+The installer verifies SHA-256 before staging the archive. It installs versioned bundles in `${XDG_DATA_HOME:-$HOME/.local/share}/voice-call/versions/` and exposes `voice-call` through `~/.local/bin`. It does not require sudo or store credentials. Add `~/.local/bin` to your shell's PATH permanently if needed. Override locations with absolute `VOICE_CALL_INSTALL_DIR` and `VOICE_CALL_BIN_DIR` values; use `VOICE_CALL_VERSION=1.0.1` to choose a published version.
 
 `voice-call doctor` checks desktop libraries, environment, and the Electron sandbox without making a provider request. If Ubuntu reports "No usable sandbox", run `voice-call setup-sandbox`, then repeat the doctor check. Sandbox setup uses sudo to install a path-scoped AppArmor profile; any replacement of that user-owned executable inherits the exception. It does not disable AppArmor globally or give the app root access. Repeat setup after installing a different version.
 

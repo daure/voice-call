@@ -2,6 +2,8 @@ import { app } from 'electron';
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
 import { createDesktop } from '../desktop/main.mjs';
 
+if (process.env.CI === 'true') app.disableHardwareAcceleration();
+
 async function run() {
   const userData = await mkdtemp('/tmp/opencode/voice-call-test-');
   app.setPath('userData', userData);
@@ -31,7 +33,7 @@ async function run() {
       }
       if (message.action === 'close') { window.close(); return; }
       process.send({ type: 'test-result', id: message.id, value });
-    } catch (error) { process.send({ type: 'test-result', id: message.id, error: error.message }); }
+    } catch (error) { process.send({ type: 'test-result', id: message.id, error: `${message.action}: ${error.message}` }); }
   });
   process.send({ type: 'test-ready' });
   app.on('quit', () => { rm(userData, { recursive: true, force: true }).catch(() => {}); });

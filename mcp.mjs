@@ -2,8 +2,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { getCall, trigger } from './server.mjs';
 import { DesktopCaller } from './desktop/caller.mjs';
+
+const version = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 
 const toolResult = (call) => ({
   content: [{ type: 'text', text: JSON.stringify(call) }],
@@ -13,7 +16,7 @@ const toolResult = (call) => ({
 
 export function createVoiceMcp({ origin, token, caller }) {
   const desktop = caller || (!origin && new DesktopCaller());
-  const server = new McpServer({ name: 'voice-call', version: '1.0.0' });
+  const server = new McpServer({ name: 'voice-call', version });
   server.registerTool('take-call', {
     title: 'Call the user',
     description: (desktop ? 'Open the Linux Voice Call app, ring the user, and wait for Answer/Reject or hang-up. '
