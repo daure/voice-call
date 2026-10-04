@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, protocol, net, Notification } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { VoiceControl } from './control.mjs';
+import { REALTIME_VOICES } from '../voice-session.mjs';
 
 const origin = 'voice-app://local';
 protocol.registerSchemesAsPrivileged([{ scheme: 'voice-app', privileges: {
@@ -15,6 +16,7 @@ export async function createDesktop(options = {}) {
     ['/style.css', new URL('./style.css', import.meta.url)],
     ['/renderer.mjs', new URL('./renderer.mjs', import.meta.url)],
     ['/history.mjs', new URL('../history.mjs', import.meta.url)],
+    ['/end-call.mjs', new URL('../end-call.mjs', import.meta.url)],
   ]);
   protocol.handle('voice-app', (request) => {
     const url = new URL(request.url);
@@ -35,7 +37,9 @@ export async function createDesktop(options = {}) {
       window.webContents.send('voice:call', call);
       if (!['ended', 'declined', 'failed'].includes(call.status)) sendParent({ type: 'progress', call });
     },
-    onResult: (call) => sendParent({ type: 'result', call }, () => { if (closing && !window.isDestroyed()) window.destroy(); }),
+    onResult: (call, { closeAfter }) => sendParent({ type: 'result', call, close_after: closeAfter }, (error) => {
+      if (!error && (closing || closeAfter) && !window.isDestroyed()) window.destroy();
+    }),
   });
   const allowedSender = (event) => event.sender === window.webContents &&
     event.senderFrame === window.webContents.mainFrame && event.senderFrame.url === `${origin}/index.html`;
@@ -43,8 +47,12 @@ export async function createDesktop(options = {}) {
     if (!allowedSender(event)) throw new Error('Untrusted desktop IPC sender');
     return action(...args);
   });
-  handle('ready', () => { sendParent({ type: 'ready' }); if (!process.send) window.show(); });
-  handle('begin', (id) => control.begin(id));
+  handle('ready', () => {
+    sendParent({ type: 'ready' });
+    if (!process.send) window.show();
+    return { voices: REALTIME_VOICES, voice: control.voice };
+  });
+  handle('begin', (id, voice) => control.begin(id, voice));
   handle('connect', (id, sdp) => control.connect(id, sdp));
   handle('stop-tools', (id) => { control.current(id); control.stop(); });
   handle('finish', (id, result) => control.finish(id, result));
@@ -76,10 +84,11 @@ export async function createDesktop(options = {}) {
   process.on('disconnect', () => { control.stop(); window.destroy(); });
   process.on('message', (message) => {
     if (message?.type === 'shutdown') return window.destroy();
+    if (message?.type === 'show') { window.show(); window.focus(); return; }
     if (message?.type === 'cancel') return control.cancel(message.id, message.error);
     if (message?.type !== 'call') return;
     try {
-      control.incoming(message.call);
+      control.incoming(message.call, message.toolsRoot);
       closing = false;
       if (window.isMinimized()) window.restore();
       window.show();

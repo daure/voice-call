@@ -3,9 +3,8 @@
   "mcp": {
     "servers": {
       "voice-call": {
-        "type": "local",
-        "command": ["voice-call", "mcp"],
-        "environment": { "OPENAI_API_KEY": "{env:OPENAI_API_KEY}" },
+        "type": "remote",
+        "url": "http://127.0.0.1:7357/mcp",
         "timeout": { "execution": 960000 }
       }
     }

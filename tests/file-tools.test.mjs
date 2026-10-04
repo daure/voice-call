@@ -44,6 +44,21 @@ test('the voice assistant discovers, searches, and reads the seven sample docume
   assert.equal(budget.matches[0].text, source[budget.matches[0].line - 1]);
 });
 
+test('project searches reach source files without spending the discovery budget on generated folders', async (t) => {
+  const { root, execute } = await workspace(t);
+  for (const name of ['target', 'node_modules']) {
+    await mkdir(join(root, name));
+    for (let index = 0; index < 1100; index++) await writeFile(join(root, name, `${index}.rs`), 'generated poll_rules');
+  }
+  await mkdir(join(root, 'src'));
+  await writeFile(join(root, 'src', 'rules.rs'), 'pub fn poll_rules() {}\n');
+  assert.deepEqual(await execute('grep', { include: '**/*.rs', pattern: 'poll_rules', limit: 50 }), {
+    matches: [{ path: 'src/rules.rs', line: 1, text: 'pub fn poll_rules() {}', truncated: false }],
+    skipped_files: [], truncated: false,
+  });
+  assert.deepEqual(await execute('glob', { pattern: '**/*.rs' }), { files: ['src/rules.rs'], truncated: false });
+});
+
 test('file tools reject traversal, hidden paths, unsafe globs, and invalid arguments', async (t) => {
   const { execute } = await workspace(t);
   for (const path of ['../server.mjs', '/etc/passwd', 'a/../../secret', 'a\\secret', '.env', 'a/.secret', 'bad\0name']) {

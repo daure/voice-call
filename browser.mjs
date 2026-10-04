@@ -1,4 +1,5 @@
 import { History } from './history.mjs';
+import { createCallEnding } from './end-call.mjs';
 
 const ui = Object.fromEntries(['answer', 'hangup', 'ring', 'status', 'audio', 'history', 'context']
   .map((id) => [id, document.getElementById(id)]));
@@ -8,7 +9,7 @@ history.replaceState(null, '', '/');
 let active = null;
 let incoming = null;
 let transcript = new History();
-let peer, channel, microphone, limitTimer;
+let peer, channel, microphone, limitTimer, callEnding;
 let ringTimer, ringAudio;
 const ringTones = new Set();
 let finishing = false;
@@ -76,6 +77,7 @@ async function api(path, options = {}) {
   return options.sdp ? text : JSON.parse(text);
 }
 function cleanup() {
+  callEnding?.stop();
   clearTimeout(limitTimer);
   microphone?.getTracks().forEach((track) => track.stop());
   channel?.close();
@@ -161,6 +163,7 @@ ui.answer.onclick = async () => {
       if (isCurrent() && connection.connectionState === 'failed') finish('failed', 'WebRTC connection failed');
     };
     const events = channel = connection.createDataChannel('oai-events');
+    callEnding = createCallEnding({ send: (event) => events.send(JSON.stringify(event)), finish: () => finish() });
     events.onmessage = ({ data }) => {
       if (active?.id !== call.id) return;
       const event = JSON.parse(data);
@@ -168,6 +171,7 @@ ui.answer.onclick = async () => {
       if (event.type === 'response.created') responseActive = true;
       if (event.type === 'response.done') responseActive = false;
       render();
+      if (!finishing) callEnding.receive(event);
       const toolResponseCollision = event.error?.code === 'conversation_already_has_active_response' &&
         event.error.event_id?.startsWith('tools_');
       if (event.type === 'error' && !toolResponseCollision) finish('failed', event.error?.message || 'Realtime error');

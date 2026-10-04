@@ -64,7 +64,7 @@ async function setup(t, options = {}) {
 test('a WebRTC call advertises file tools and returns real file results over its authenticated sideband', { timeout: 6000 }, async (t) => {
   const demo = await setup(t);
   assert.equal(demo.connected.status, 200);
-  assert.deepEqual(demo.session.tools.map((tool) => tool.name), ['glob', 'grep', 'read_file']);
+  assert.deepEqual(demo.session.tools.map((tool) => tool.name), ['glob', 'grep', 'read_file', 'end_call']);
   assert.equal(demo.session.tool_choice, 'auto');
   assert.match(demo.session.instructions, /untrusted data/);
   demo.emit({ type: 'response.created', response: { id: 'response_1' } });
@@ -85,8 +85,27 @@ test('a WebRTC call advertises file tools and returns real file results over its
   const closed = once(demo.socket(), 'close');
   const finished = await demo.api(`/calls/${demo.call.id}/finish`, {
     status: 'ended', history: [{ id: 'spoken', role: 'assistant', text: 'The poem describes quiet care.' }], incomplete: false,
+    file_activity: { root: 'forged', complete: true, calls: [] },
   });
   assert.equal(finished.data.history[0].text, 'The poem describes quiet care.');
+  const activity = finished.data.file_activity;
+  assert.equal(activity.root, 'test-docs');
+  assert.equal(activity.complete, true);
+  assert.deepEqual(activity.calls.map(({ sequence, call_id, tool, status, delivered_to_voice }) =>
+    ({ sequence, call_id, tool, status, delivered_to_voice })), [
+    { sequence: 1, call_id: 'find', tool: 'glob', status: 'completed', delivered_to_voice: true },
+    { sequence: 2, call_id: 'search', tool: 'grep', status: 'completed', delivered_to_voice: true },
+    { sequence: 3, call_id: 'read', tool: 'read_file', status: 'completed', delivered_to_voice: true },
+  ]);
+  assert.deepEqual(activity.calls[0].arguments, { pattern: '**/*' });
+  assert.equal(activity.calls[0].result.files.length, 7);
+  assert.deepEqual(activity.calls[1].result.matches.map(({ path }) => path),
+    ['personal/love-letter.txt', 'planning/weekend-itinerary.md']);
+  assert.equal(activity.calls[1].result.matches.every((match) => Number.isInteger(match.line) && !('text' in match)), true);
+  assert.deepEqual(activity.calls[2].result, { path: 'creative/poem.md', line_ranges: [[3, 3]],
+    total_lines: 21, next_offset: 4, truncated: true });
+  assert.doesNotMatch(JSON.stringify(activity), /At dusk the harbor/);
+  assert.deepEqual((await demo.api(`/calls/${demo.call.id}`)).data.file_activity, activity);
   await closed;
 });
 
@@ -106,6 +125,12 @@ test('file errors return to the model without leaking absolute host paths or fai
   assert.equal((await demo.api(`/calls/${demo.call.id}`)).data.status, 'active');
   demo.emit({ type: 'response.function_call_arguments.done', call_id: 'malformed', name: 'glob', arguments: '{bad' });
   assert.equal(typeof (await demo.result('malformed')).error, 'string');
+  const activity = (await demo.api(`/calls/${demo.call.id}`)).data.file_activity;
+  assert.equal(activity.calls.length, 5);
+  assert.equal(activity.calls.every((entry) => entry.status === 'failed' && entry.delivered_to_voice && typeof entry.error === 'string'), true);
+  assert.deepEqual(activity.calls.at(-1).arguments, null);
+  assert.equal(activity.calls.at(-1).error, 'Invalid file tool arguments');
+  assert.doesNotMatch(JSON.stringify(activity), /\/home\/|fake-key|private material/);
 });
 
 test('pending tool results wait for user speech and the automatic response can consume them', { timeout: 6000 }, async (t) => {
@@ -137,6 +162,8 @@ test('a response collision defers the tool continuation until the active respons
 
 test('sideband failure ends the call and permits the next incoming call', { timeout: 6000 }, async (t) => {
   const demo = await setup(t);
+  demo.tool('find', 'glob', { pattern: '**/*' });
+  await demo.result('find');
   demo.socket().terminate();
   await waitFor(() => demo.socket().readyState === WebSocket.CLOSED);
   let call;
@@ -147,6 +174,8 @@ test('sideband failure ends the call and permits the next incoming call', { time
   }
   assert.equal(call.status, 'failed');
   assert.equal(call.incomplete, true);
+  assert.equal(call.file_activity.complete, false);
+  assert.equal(call.file_activity.calls[0].delivered_to_voice, true);
   assert.match(call.error, /File tool connection/);
   assert.equal((await demo.api('/calls', { context: 'Next call' })).status, 201);
 });
@@ -179,12 +208,31 @@ test('a call deadline closes its sideband without a browser hang-up', { timeout:
 
 test('hang-up stops file tools before the browser drains its transcript', { timeout: 6000 }, async (t) => {
   const demo = await setup(t);
+  demo.tool('find', 'glob', { pattern: '**/*', limit: 1 });
+  await demo.result('find');
   const closed = once(demo.socket(), 'close');
   const stopped = await demo.api(`/calls/${demo.call.id}/stop-tools`, {});
   assert.equal(stopped.status, 200);
   await closed;
   assert.equal((await demo.api(`/calls/${demo.call.id}`)).data.status, 'active');
-  assert.equal((await demo.api(`/calls/${demo.call.id}/finish`, {
+  const finished = await demo.api(`/calls/${demo.call.id}/finish`, {
     status: 'ended', history: [], incomplete: false,
-  })).data.status, 'ended');
+  });
+  assert.equal(finished.data.status, 'ended');
+  assert.equal(finished.data.file_activity.complete, true);
+  assert.deepEqual(finished.data.file_activity.calls[0].result, { files: ['business/use-case.md'], truncated: true });
+});
+
+test('assistant hang-up leaves execution to the WebRTC client and suppresses file tool continuations', { timeout: 6000 }, async (t) => {
+  const demo = await setup(t);
+  demo.emit({ type: 'response.created', response: { id: 'response_1' } });
+  demo.tool('find', 'glob', { pattern: '**/*' });
+  await demo.result('find');
+  demo.tool('hangup', 'end_call', {});
+  demo.emit({ type: 'response.done', response: { id: 'response_1' } });
+  demo.tool('late', 'glob', { pattern: '**/*' });
+  await sleep(100);
+  assert.equal(demo.events.filter((event) => event.type === 'response.create').length, 0);
+  assert.deepEqual(demo.events.filter((event) => event.item).map((event) => event.item.call_id), ['find']);
+  assert.equal((await demo.api(`/calls/${demo.call.id}`)).data.status, 'active');
 });

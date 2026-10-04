@@ -5,6 +5,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { createDemo } from '../server.mjs';
+import { WebSocket, WebSocketServer } from 'ws';
 
 async function connect(t, options = {}) {
   const server = createDemo({ token: 'mcp-test', apiKey: 'fake-key', toolsRoot: null,
@@ -30,35 +31,60 @@ async function connect(t, options = {}) {
   return { client, api };
 }
 
-function startCall(client, options = {}) {
+function startCall(client, options = {}, arguments_ = {
+  context: 'The checkout deployment failed.', questions: ['Should we roll it back?'],
+}) {
   let progressReceived;
   const progress = new Promise((resolve) => { progressReceived = resolve; });
-  const result = client.callTool({ name: 'take-call', arguments: {
-    context: 'The checkout deployment failed.', questions: ['Should we roll it back?'],
-  } }, undefined, { timeout: 5000, onprogress: progressReceived, ...options });
+  const result = client.callTool({ name: 'take-call', arguments: arguments_ }, undefined,
+    { timeout: 5000, onprogress: progressReceived, ...options });
   return { result, progress };
 }
 
-test('take-call waits across stdio until hang-up and returns the ordered transcript', { timeout: 10_000 }, async (t) => {
+test('take-call waits across stdio until hang-up and returns the transcript and file activity', { timeout: 10_000 }, async (t) => {
+  const provider = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  await new Promise((resolve) => provider.once('listening', resolve));
+  t.after(async () => {
+    for (const socket of provider.clients) socket.terminate();
+    await new Promise((resolve) => provider.close(resolve));
+  });
+  let socket;
+  provider.on('connection', (connection) => { socket = connection; });
   let instructions;
-  const { client, api } = await connect(t, { request: async (_url, options) => {
+  const { client, api } = await connect(t, {
+    toolsRoot: fileURLToPath(new URL('../test-docs/', import.meta.url)),
+    connectTools: () => new WebSocket(`ws://127.0.0.1:${provider.address().port}`),
+    request: async (_url, options) => {
     instructions = JSON.parse(options.body.get('session')).instructions;
-    return new Response('v=0\r\nmock-answer');
+    return new Response('v=0\r\nmock-answer', { headers: { Location: '/v1/realtime/calls/rtc_mcp' } });
   } });
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name), ['take-call', 'get-call']);
-  const waiting = startCall(client);
+  const briefing = `Project evidence:\n${'Known fact: the previous release is healthy.\n'.repeat(2000)}End of briefing.`;
+  const waiting = startCall(client, {}, { context: briefing, questions: ['Should we roll it back?'] });
   let settled = false;
   waiting.result.then(() => { settled = true; });
-  const progress = await waiting.progress;
+  const progress = await Promise.race([waiting.progress, waiting.result.then((result) => {
+    throw new Error(`Call ended before ringing: ${JSON.stringify(result)}`);
+  })]);
   const call = await api('/current');
   assert.equal(call.status, 'ringing');
   assert.match(progress.message, new RegExp(call.id));
-  assert.equal(call.context, 'The checkout deployment failed.\n\nQuestions to resolve:\n1. Should we roll it back?');
+  assert.equal(call.context, `${briefing}\n\nQuestions to resolve:\n1. Should we roll it back?`);
   assert.equal(settled, false);
   assert.equal(await api(`/calls/${call.id}/connect`, 'POST', 'v=0\r\nmock-offer'), 'v=0\r\nmock-answer');
   assert.match(instructions, /Should we roll it back\?/);
   assert.match(instructions, /on behalf of another AI agent/);
+  assert.match(instructions, /Speak English/);
+  assert.match(instructions, /only when the user explicitly asks/);
+  assert.ok(instructions.endsWith(call.context));
+  const output = new Promise((resolve) => socket.on('message', (data) => {
+    const event = JSON.parse(data);
+    if (event.item?.call_id === 'files') resolve(JSON.parse(event.item.output));
+  }));
+  socket.send(JSON.stringify({ type: 'response.function_call_arguments.done',
+    call_id: 'files', name: 'glob', arguments: '{"pattern":"**/*"}' }));
+  assert.equal((await output).files.length, 7);
   assert.equal(settled, false);
   const history = [{ id: 'a', role: 'assistant', text: 'Should we roll it back?' },
     { id: 'u', role: 'user', text: 'Yes, roll it back.' }];
@@ -68,6 +94,10 @@ test('take-call waits across stdio until hang-up and returns the ordered transcr
   assert.equal(result.structuredContent.id, call.id);
   assert.deepEqual(result.structuredContent.history, history);
   assert.equal(result.structuredContent.incomplete, false);
+  assert.equal(result.structuredContent.file_activity.root, 'test-docs');
+  assert.equal(result.structuredContent.file_activity.complete, true);
+  assert.equal(result.structuredContent.file_activity.calls[0].result.files.length, 7);
+  assert.equal(result.structuredContent.file_activity.calls[0].delivered_to_voice, true);
   assert.deepEqual(JSON.parse(result.content[0].text), result.structuredContent);
   const recovered = await client.callTool({ name: 'get-call', arguments: { id: call.id } });
   assert.deepEqual(recovered.structuredContent, result.structuredContent);
@@ -86,6 +116,7 @@ test('a busy call rejects a second caller while decline releases the first wait'
   const result = await waiting.result;
   assert.equal(result.structuredContent.status, 'declined');
   assert.deepEqual(result.structuredContent.history, []);
+  assert.deepEqual(result.structuredContent.file_activity, { root: null, complete: true, calls: [] });
 });
 
 test('MCP cancellation ends ringing and releases the call slot', { timeout: 10_000 }, async (t) => {
@@ -125,7 +156,7 @@ test('unanswered calls return a failed result and allow another call', { timeout
 test('invalid tool input does not ring the website', { timeout: 10_000 }, async (t) => {
   const { client, api } = await connect(t);
   for (const arguments_ of [{ context: ' ' }, { context: 'Event', timeout_seconds: 0 },
-    { context: 'x'.repeat(10_000), questions: ['Question'] }]) {
+    { context: 'x'.repeat(100_001) }, { context: 'x'.repeat(100_000), questions: ['Question'] }]) {
     const result = await client.callTool({ name: 'take-call', arguments: arguments_ });
     assert.equal(result.isError, true);
     assert.equal(await api('/current'), null);

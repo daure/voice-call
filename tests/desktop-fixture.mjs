@@ -7,9 +7,12 @@ if (process.env.CI === 'true') app.disableHardwareAcceleration();
 async function run() {
   const userData = await mkdtemp('/tmp/opencode/voice-call-test-');
   app.setPath('userData', userData);
+  let negotiatedVoice;
   const { window, control } = await createDesktop({ apiKey: 'offline-key', toolsRoot: null,
     request: async (_url, options) => {
-      const instructions = JSON.parse(options.body.get('session')).instructions;
+      const session = JSON.parse(options.body.get('session'));
+      const instructions = session.instructions;
+      negotiatedVoice = session.audio.output.voice;
       if (instructions.includes('quota-test')) return new Response('credit_balance_exhausted', { status: 429 });
       return new Response('v=0\r\nmock-answer');
     } });
@@ -26,7 +29,7 @@ async function run() {
         sandbox: window.webContents.getLastWebPreferences().sandbox,
         nodeIntegration: window.webContents.getLastWebPreferences().nodeIntegration,
         contextIsolation: window.webContents.getLastWebPreferences().contextIsolation,
-      }, state: control.call?.status, toolsStopped: control.sideband === null };
+      }, state: control.call?.status, voice: control.call?.voice, negotiatedVoice, toolsStopped: control.sideband === null };
       if (message.action === 'screenshot') {
         await writeFile(message.path, (await window.webContents.capturePage()).toPNG());
         value = message.path;

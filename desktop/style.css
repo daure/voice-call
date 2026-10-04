@@ -8,12 +8,21 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 #indicator { font-size: 44px; color: #8be5c0; line-height: 1; }
 h1 { font-size: 26px; letter-spacing: -.025em; margin: 20px 0 12px; }
 #status { color: #b3bfd0; line-height: 1.6; margin: 0 auto; max-width: 460px; overflow-wrap: anywhere; }
+.voice-picker { margin: 20px auto 0; max-width: 320px; text-align: left; }
+.voice-picker label { display: block; color: #c5d0e1; font-size: 13px; margin-bottom: 8px; }
+.voice-picker select {
+  width: 100%; font: inherit; color: #edf1f8; border: 1px solid #3a4659; border-radius: 10px;
+  appearance: none; padding: 10px 32px 10px 12px;
+  background: #232c3c url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 8"%3E%3Cpath d="m1 1 5 5 5-5" fill="none" stroke="%23c5d0e1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/%3E%3C/svg%3E') no-repeat right 8px center / 12px 8px;
+}
+.voice-picker select:disabled { opacity: .55; }
+#voice-hint { color: #98a7bd; font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
 .actions { display: flex; gap: 12px; justify-content: center; margin-top: 24px; }
 button { font: inherit; font-weight: 650; padding: 12px 30px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; }
 #answer { background: #8be5c0; color: #10241d; }
 #reject, #hangup { background: #34252d; color: #ffb4bd; border-color: #67434f; }
 button:disabled { opacity: .35; cursor: default; }
-button:focus-visible, summary:focus-visible { outline: 3px solid #b4caff; outline-offset: 4px; }
+button:focus-visible, summary:focus-visible, select:focus-visible { outline: 3px solid #b4caff; outline-offset: 4px; }
 [hidden] { display: none !important; }
 details { margin: 20px 0; border: 1px solid #323d50; border-radius: 12px; background: #191f2b; }
 summary { padding: 16px; cursor: pointer; font-weight: 600; }

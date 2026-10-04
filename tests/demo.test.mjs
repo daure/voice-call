@@ -64,8 +64,10 @@ test('upstream rejection returns a failed call to the caller', async (t) => {
 
 test('editable context configures the assistant before the call starts', async (t) => {
   let instructions;
-  const { api } = await demo(t, { request: async (_url, options) => {
-    instructions = JSON.parse(options.body.get('session')).instructions;
+  const { api } = await demo(t, { voice: 'cedar', request: async (_url, options) => {
+    const session = JSON.parse(options.body.get('session'));
+    instructions = session.instructions;
+    assert.equal(session.audio.output.voice, 'cedar');
     return new Response('v=0\r\nmock-answer');
   } });
   const call = await (await api('/calls', 'POST', { context: 'Original event context' })).json();
@@ -75,7 +77,9 @@ test('editable context configures the assistant before the call starts', async (
   })).json();
   assert.equal(updated.context, 'Explain bug BILL-218: an invoice date shows the previous day.');
   assert.equal((await api(`/calls/${call.id}/connect`, 'POST', 'v=0')).status, 200);
-  assert.match(instructions, /Immediately begin speaking/);
+  assert.match(instructions, /Hi, I’m calling to <purpose>\. Are you ready\?/);
+  assert.match(instructions, /purpose in 3–8 words/);
+  assert.match(instructions, /Wait for confirmation before explaining or asking substantive questions/);
   assert.match(instructions, /Explain bug BILL-218/);
   assert.equal((await api(`/calls/${call.id}`, 'PATCH', { context: 'Another scenario' })).status, 409);
 });

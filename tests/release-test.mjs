@@ -29,6 +29,9 @@ function success(result) { assert.equal(result.status, 0, result.stderr || resul
 const install = (overrides) => run('sh', [join(assets, 'voice-call-installer.sh')], overrides);
 
 async function desktopSmoke(bundle) {
+  const sessionRoot = join(temp, 'session-source');
+  await mkdir(sessionRoot);
+  await writeFile(join(sessionRoot, 'rules.rs'), 'fn poll_rules() {}\n');
   const executable = join(bundle, 'runtime', 'electron', 'electron');
   if (process.env.CI === 'true') {
     const setup = spawnSync('sh', [join(root, 'scripts', 'setup-sandbox.sh'), executable], { encoding: 'utf8' });
@@ -46,16 +49,18 @@ async function desktopSmoke(bundle) {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`Packaged desktop timed out: ${diagnostics}`)), 20_000);
       child.on('message', (message) => {
-        if (message?.type === 'ready') child.send({ type: 'call', call: { id, context: 'Offline packaged desktop smoke test.',
-          status: 'ringing', history: [], incomplete: false } });
-        if (message?.type === 'progress' && message.call?.status === 'ringing') {
+         if (message?.type === 'ready') child.send({ type: 'call', call: { id, context: 'Offline packaged desktop smoke test.',
+          status: 'ringing', history: [], incomplete: false }, toolsRoot: sessionRoot });
+         if (message?.type === 'progress' && message.call?.status === 'ringing') {
+          assert.equal(message.call.file_activity.root, 'session-source');
           child.send({ type: 'cancel', id, error: 'Offline smoke test complete' });
         }
         if (message?.type === 'result') {
           try {
             assert.equal(message.call.id, id);
             assert.equal(message.call.status, 'failed');
-            assert.equal(message.call.error, 'Offline smoke test complete');
+             assert.equal(message.call.error, 'Offline smoke test complete');
+            assert.equal(message.call.file_activity.root, 'session-source');
             clearTimeout(timer); resolve();
           } catch (error) { clearTimeout(timer); reject(error); }
         }

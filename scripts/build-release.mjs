@@ -55,8 +55,8 @@ async function checkFiles(directory) {
 
 try {
   await mkdir(join(bundle, 'app'), { recursive: true });
-  const sources = ['package.json', 'package-lock.json', 'mcp.mjs', 'server.mjs', 'voice-session.mjs',
-    'file-tools.mjs', 'realtime-tools.mjs', 'history.mjs', 'browser.mjs', 'index.html', 'scenarios.mjs', 'test-docs'];
+  const sources = ['package.json', 'package-lock.json', 'mcp.mjs', 'session-root.mjs', 'server.mjs', 'voice-session.mjs',
+    'file-tools.mjs', 'file-activity.mjs', 'realtime-tools.mjs', 'history.mjs', 'end-call.mjs', 'browser.mjs', 'index.html', 'scenarios.mjs', 'test-docs'];
   for (const source of sources) await cp(join(root, source), join(bundle, 'app', source), { recursive: true });
   await mkdir(join(bundle, 'app', 'desktop'));
   for (const source of ['caller.mjs', 'control.mjs', 'main.mjs', 'preload.cjs', 'renderer.mjs', 'index.html', 'style.css']) {

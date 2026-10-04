@@ -2,8 +2,10 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { emptyFileActivity, interruptedFileActivity } from '../file-activity.mjs';
 
 // Electron's package entrypoint can download its runtime and write to MCP stdout.
 const electron = process.env.VOICE_CALL_ELECTRON_PATH ||
@@ -11,9 +13,10 @@ const electron = process.env.VOICE_CALL_ELECTRON_PATH ||
 
 const terminal = new Set(['ended', 'declined', 'failed']);
 
-export class DesktopCaller {
+export class DesktopCaller extends EventEmitter {
   constructor({ launch, entry = fileURLToPath(new URL('./main.mjs', import.meta.url)),
     answerTimeout = 120_000, startupTimeout = 20_000, requireDisplay = true } = {}) {
+    super();
     this.launch = launch || (() => {
       if (!existsSync(electron)) throw new Error('Install the Electron runtime first: npm exec -- install-electron --no');
       const env = { ...process.env };
@@ -57,10 +60,14 @@ export class DesktopCaller {
         if (!waiting || message?.call?.id !== waiting.call.id) return;
         if (message.type === 'progress' && ['ringing', 'connecting', 'active'].includes(message.call.status)) {
           waiting.call.status = message.call.status;
+          if (message.call.file_activity) waiting.call.file_activity = structuredClone(message.call.file_activity);
           if (message.call.status !== 'ringing') clearTimeout(waiting.answerTimer);
           waiting.progress();
         }
-        if (message.type === 'result' && terminal.has(message.call.status)) this.finish(message.call);
+        if (message.type === 'result' && terminal.has(message.call.status)) {
+          if (message.close_after === true && message.call.status === 'ended') this.child = this.ready = null;
+          this.finish(message.call);
+        }
       });
       const exited = () => {
         clearTimeout(timer);
@@ -68,6 +75,7 @@ export class DesktopCaller {
         if (child !== this.child) return;
         this.child = this.ready = null;
         if (this.waiting) this.finish({ status: 'failed', error: 'Desktop window closed before the call finished', incomplete: true });
+        this.emit('closed');
       };
       child.once('error', exited);
       child.once('exit', exited);
@@ -83,17 +91,21 @@ export class DesktopCaller {
     clearTimeout(waiting.deadlineTimer);
     clearInterval(waiting.progressTimer);
     waiting.signal?.removeEventListener('abort', waiting.abort);
+    const activity = result.file_activity || (waiting.call.status === 'ringing'
+      ? waiting.call.file_activity : interruptedFileActivity(waiting.call.file_activity));
     Object.assign(waiting.call, { status: result.status, history: result.history || [],
+      file_activity: structuredClone(activity),
       incomplete: Boolean(result.incomplete), error: String(result.error || ''), ended_at: new Date().toISOString() });
     this.waiting = null;
     waiting.resolve(waiting.call);
   }
 
-  async trigger({ context, timeout = 900_000, signal, onProgress = async () => {} }) {
+  async trigger({ context, timeout = 900_000, signal, toolsRoot = process.cwd(), onProgress = async () => {} }) {
     signal?.throwIfAborted();
     if (this.waiting) throw new Error('A call is already pending or active');
     const call = { id: randomUUID(), context, status: 'ringing', created_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + timeout).toISOString(), history: [], incomplete: false };
+      expires_at: new Date(Date.now() + timeout).toISOString(), history: [], incomplete: false,
+      file_activity: emptyFileActivity(toolsRoot ? basename(toolsRoot) : null) };
     this.calls.set(call.id, call);
     if (this.calls.size > 50) this.calls.delete(this.calls.keys().next().value);
     let resolve;
@@ -112,7 +124,7 @@ export class DesktopCaller {
     signal?.addEventListener('abort', abort, { once: true });
     progress();
     this.open().then(() => {
-      if (this.waiting?.call.id === call.id) this.send({ type: 'call', call });
+      if (this.waiting?.call.id === call.id) this.send({ type: 'call', call, toolsRoot });
     }).catch((error) => {
       if (this.waiting?.call.id === call.id) this.finish({ status: 'failed', error: error.message, incomplete: true });
     });
@@ -123,6 +135,11 @@ export class DesktopCaller {
     const call = this.calls.get(id);
     if (!call) throw new Error('Call not found');
     return call;
+  }
+
+  async show() {
+    await this.open();
+    this.send({ type: 'show' });
   }
 
   close() {

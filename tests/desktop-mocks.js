@@ -21,7 +21,7 @@ window.RTCPeerConnection = class {
   iceGatheringState = 'complete';
   addTrack() {}
   createDataChannel() {
-    return this.channel = { readyState: 'connecting', send(data) { window.sentEvents.push(JSON.parse(data)); },
+    return window.voiceChannel = this.channel = { readyState: 'connecting', send(data) { window.sentEvents.push(JSON.parse(data)); },
       close() { this.readyState = 'closed'; this.onclose?.(); } };
   }
   async createOffer() { return { type: 'offer', sdp: 'v=0\r\nmock-offer' }; }

@@ -17,7 +17,7 @@ Usage: voice-call [desktop|mcp|doctor|setup-sandbox|--version|--help]
   desktop        Open the idle desktop window (default).
   mcp            Run the stdio MCP server; it opens its own window on calls.
   doctor         Check desktop libraries, environment, and Electron sandbox.
-  setup-sandbox  Install a scoped Ubuntu AppArmor exception using sudo.
+  setup-sandbox  One-time Ubuntu AppArmor setup for this install directory (sudo).
 
 Set OPENAI_API_KEY in the MCP client's launch environment. It is never stored.
 Reconnect the MCP server after updates. Voice calls use paid OpenAI API credits.

@@ -5,7 +5,8 @@ umask 022
 fail() { printf 'voice-call installer: %s\n' "$*" >&2; exit 1; }
 [ "$(uname -s)" = Linux ] || fail 'Only Linux is supported.'
 [ "$(uname -m)" = x86_64 ] || fail 'This release requires x86_64 (amd64).'
-for tool in curl tar xz sha256sum mktemp readlink; do command -v "$tool" >/dev/null || fail "Required command not found: $tool"; done
+for tool in tar xz sha256sum mktemp readlink; do command -v "$tool" >/dev/null || fail "Required command not found: $tool"; done
+if [ -z "${VOICE_CALL_LOCAL_ASSETS:-}" ]; then command -v curl >/dev/null || fail 'Required command not found: curl'; fi
 
 version=${VOICE_CALL_VERSION:-@VERSION@}
 printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || fail 'Expected a stable version such as 1.0.0.'
@@ -25,9 +26,15 @@ cleanup() { rm -rf "$stage"; rm -f "$install_dir/.current.$$" "$bin_dir/.voice-c
 trap cleanup EXIT HUP INT TERM
 name=voice-call-x86_64-unknown-linux-gnu
 archive=$name.tar.xz
-base=https://github.com/daure/voice-call/releases/download/v$version
-curl --proto '=https' --tlsv1.2 -fLsS --retry 3 "$base/$archive" -o "$stage/$archive"
-curl --proto '=https' --tlsv1.2 -fLsS --retry 3 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"
+if [ -n "${VOICE_CALL_LOCAL_ASSETS:-}" ]; then
+  case "$VOICE_CALL_LOCAL_ASSETS" in /*) ;; *) fail 'Local assets directory must be absolute.' ;; esac
+  cp "$VOICE_CALL_LOCAL_ASSETS/$archive" "$stage/$archive"
+  cp "$VOICE_CALL_LOCAL_ASSETS/SHA256SUMS" "$stage/SHA256SUMS"
+else
+  base=https://github.com/daure/voice-call/releases/download/v$version
+  curl --proto '=https' --tlsv1.2 -fLsS --retry 3 "$base/$archive" -o "$stage/$archive"
+  curl --proto '=https' --tlsv1.2 -fLsS --retry 3 "$base/SHA256SUMS" -o "$stage/SHA256SUMS"
+fi
 expected=$(awk -v name="$archive" '$2 == name {print $1}' "$stage/SHA256SUMS")
 printf '%s\n' "$expected" | grep -Eq '^[a-f0-9]{64}$' || fail 'Missing or invalid archive checksum.'
 actual=$(sha256sum "$stage/$archive" | cut -d ' ' -f 1)
@@ -43,6 +50,7 @@ installed_version=$("$stage/$name/bin/voice-call" --version)
 printf '%s\n' "$installed_version"
 printf '%s\n' "$actual" > "$stage/$name/ARCHIVE_SHA256"
 destination=$install_dir/versions/$version
+if [ -n "${VOICE_CALL_LOCAL_ASSETS:-}" ]; then destination=$destination-local-$actual; fi
 if [ -e "$destination" ]; then
   [ -f "$destination/ARCHIVE_SHA256" ] && [ "$(cat "$destination/ARCHIVE_SHA256")" = "$actual" ] || fail 'This version is installed with different contents; refusing to overwrite it.'
 else
@@ -56,5 +64,7 @@ printf 'Installed voice-call %s in %s\n' "$version" "$destination"
 printf 'Add %s to PATH, then run: voice-call doctor\n' "$bin_dir"
 printf 'Reconnect your MCP client after updates. Existing calls and credentials are untouched.\n'
 if [ -f /proc/sys/kernel/apparmor_restrict_unprivileged_userns ] && [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = 1 ]; then
-  printf 'Ubuntu sandbox setup may be required: voice-call setup-sandbox (uses sudo).\n'
+  if ! sh "$destination/bin/setup-sandbox" --check "$destination/runtime/electron/electron" >/dev/null 2>&1; then
+    printf 'One-time Ubuntu sandbox setup for this install directory: voice-call setup-sandbox (uses sudo).\n'
+  fi
 fi

@@ -13,7 +13,7 @@ const schemas = {
     limit: z.number().int().min(1).max(200).default(100) }).strict(),
 };
 const descriptions = {
-  glob: 'Find files by root-relative glob using *, ** and ? only, e.g. **/*.md or creative/*.txt. Hidden files and symlinks are excluded. Results are bounded; truncated means some results were omitted.',
+  glob: 'Find files by root-relative glob using *, ** and ? only, e.g. **/*.md or src/*.rs. Discovery excludes hidden files, symlinks, and generated node_modules and target folders. Results are bounded; truncated means some results were omitted.',
   grep: 'Find literal text (not regex) in UTF-8 files. Returns root-relative paths, 1-based line numbers and matching text. include is a glob; search is case-insensitive by default. Reports skipped files and truncation.',
   read_file: 'Read a UTF-8 file using its root-relative path. offset is a 1-based line number. Returns numbered lines and next_offset when more remains. Files must be regular, non-linked and at most 128 KiB.',
 };
@@ -78,7 +78,8 @@ export function createFileTools(directory) {
       for await (const entry of entries) {
         signal?.throwIfAborted();
         if (++visited > 1000) { truncated = true; break; }
-        if (entry.name.startsWith('.') || entry.isSymbolicLink()) continue;
+        if (entry.name.startsWith('.') || entry.isSymbolicLink() ||
+            (entry.isDirectory() && ['node_modules', 'target'].includes(entry.name))) continue;
         const child = path ? `${path}/${entry.name}` : entry.name;
         if (entry.isFile()) files.push(child);
         else if (entry.isDirectory()) {

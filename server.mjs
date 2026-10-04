@@ -2,13 +2,15 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { basename } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { createFileTools } from './file-tools.mjs';
 import { attachFileTools } from './realtime-tools.mjs';
-import { negotiateVoice } from './voice-session.mjs';
+import { negotiateVoice, MAX_CONTEXT_CHARACTERS, MAX_CALL_REQUEST_BYTES, DEFAULT_REALTIME_VOICE } from './voice-session.mjs';
+import { emptyFileActivity } from './file-activity.mjs';
 
 const terminalStates = new Set(['ended', 'declined', 'failed']);
-const validContext = (context) => typeof context === 'string' && context.trim() && context.length <= 10_000;
+const validContext = (context) => typeof context === 'string' && context.trim() && context.length <= MAX_CONTEXT_CHARACTERS;
 
 function reply(res, status, data, type = 'application/json') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store',
@@ -20,12 +22,13 @@ async function body(req) {
   let text = '';
   for await (const chunk of req) {
     text += chunk;
-    if (Buffer.byteLength(text) > 256_000) throw new Error('Request body too large');
+    if (Buffer.byteLength(text) > MAX_CALL_REQUEST_BYTES) throw new Error('Request body too large');
   }
   return text;
 }
 
 export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fetch,
+  voice = process.env.OPENAI_REALTIME_VOICE?.trim() || DEFAULT_REALTIME_VOICE,
   answerTimeout = 120_000, toolsRoot = fileURLToPath(new URL('./test-docs/', import.meta.url)),
   connectTools }) {
   const calls = new Map();
@@ -37,6 +40,7 @@ export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fe
     ['/', ['index.html', 'text/html']],
     ['/browser.mjs', ['browser.mjs', 'text/javascript']],
     ['/history.mjs', ['history.mjs', 'text/javascript']],
+    ['/end-call.mjs', ['end-call.mjs', 'text/javascript']],
     ['/scenarios.mjs', ['scenarios.mjs', 'text/javascript']],
   ]);
 
@@ -71,7 +75,7 @@ export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fe
       if (req.method === 'POST' && req.url === '/calls') {
         const { context, timeout_ms = 900_000 } = JSON.parse(await body(req));
         if (!validContext(context)) {
-          return reply(res, 400, { error: 'context must contain 1–10000 characters' });
+          return reply(res, 400, { error: `context must contain 1–${MAX_CONTEXT_CHARACTERS} characters` });
         }
         if (!Number.isInteger(timeout_ms) || timeout_ms < 1000 || timeout_ms > 3_600_000) {
           return reply(res, 400, { error: 'timeout_ms must be an integer between 1000 and 3600000' });
@@ -81,7 +85,8 @@ export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fe
         }
         current = { id: randomUUID(), context, status: 'ringing',
           created_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + timeout_ms).toISOString(), history: [], incomplete: false };
+          expires_at: new Date(Date.now() + timeout_ms).toISOString(), history: [], incomplete: false,
+          file_activity: emptyFileActivity(toolsRoot ? basename(toolsRoot) : null) };
         calls.set(current.id, current);
         const call = current;
         timers.set(call.id, [
@@ -99,7 +104,7 @@ export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fe
       if (req.method === 'PATCH' && !match[2]) {
         if (call.status !== 'ringing') return reply(res, 409, { error: 'Context is fixed once a call starts' });
         const { context } = JSON.parse(await body(req));
-        if (!validContext(context)) return reply(res, 400, { error: 'context must contain 1–10000 characters' });
+        if (!validContext(context)) return reply(res, 400, { error: `context must contain 1–${MAX_CONTEXT_CHARACTERS} characters` });
         call.context = context;
         return reply(res, 200, call);
       }
@@ -114,10 +119,11 @@ export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fe
         clearTimeout(timers.get(call.id)?.[0]);
         try {
           const { answer, callId } = await negotiateVoice({ sdp, context: call.context,
-            apiKey, model, withTools: Boolean(executeFileTool), request });
+            apiKey, model, voice, withTools: Boolean(executeFileTool), request });
           if (call.status !== 'connecting') throw new Error('Call ended during connection');
           if (executeFileTool) {
             const sideband = attachFileTools({ callId, apiKey, execute: executeFileTool,
+              fileActivity: call.file_activity,
               connect: connectTools, onFailure: (message) => expire(call, message) });
             sidebands.set(call.id, sideband);
             await sideband.ready;
@@ -126,6 +132,7 @@ export function createDemo({ token, apiKey, model = 'gpt-realtime', request = fe
           call.status = 'active';
           return reply(res, 200, answer, 'application/sdp');
         } catch (error) {
+          if (executeFileTool) call.file_activity.complete = false;
           expire(call, error.message);
           return reply(res, 502, { error: error.message });
         }
