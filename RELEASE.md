@@ -1,9 +1,11 @@
 Linux desktop voice companion for MCP agents, with native OpenAI Realtime audio.
 
-## Voice Call v1.0.2
+## Voice Call v1.0.3
 
+- Open maximized and fullscreen; F11 toggles fullscreen.
+- Keep call controls in the header. Collapsed context leaves the remaining space for conversation; expanded context splits it equally, with independent scrolling.
 - Say goodbye to end a call after the assistant's farewell audio finishes. Manual hang-up retains the review window.
-- Choose the assistant voice before answering; `OPENAI_REALTIME_VOICE` defaults to `shimmer`.
+- Choose the assistant voice before answering; `OPENAI_REALTIME_VOICE` defaults to `marin`.
 - Read project files within the invoking OpenCode session's active directory, including moved sessions and worktrees.
 - Inspect ordered file-tool activity alongside the transcript, with relative paths, line ranges, errors, and delivery status.
 - Supply briefings up to 100,000 characters, subject to provider token limits. Wait acknowledgements use “Okay.”

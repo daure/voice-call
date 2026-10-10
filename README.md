@@ -1,6 +1,8 @@
 # Agent voice call MCP
 
-A local stdio MCP server opens a Linux Electron app and rings the user. **Answer** connects a native OpenAI Realtime voice assistant to discuss the calling agent's context and questions. **Reject** returns a declined call. **Hang up** returns the transcript to MCP and leaves the window open for review. Initial context is available in a collapsible panel.
+A local stdio MCP server opens a Linux Electron app and rings the user. **Answer** connects a native OpenAI Realtime voice assistant to discuss the calling agent's context and questions. **Reject** returns a declined call. **Hang up** returns the transcript to MCP and leaves the window open for review.
+
+The app opens maximized and fullscreen; F11 toggles fullscreen. Call controls stay in the header. Initial context starts collapsed so the conversation fills the remaining space. Expanding context splits the space equally between context and conversation, with independent scrolling.
 
 Say "goodbye" or "you can hang up now" to end an answered call by voice. The assistant says a brief goodbye and invokes its internal `end_call` tool. The desktop app and browser wait for goodbye audio playback to finish, then disconnect and return the transcript and file activity. The desktop app exits after returning the result; MCP stays available and launches a fresh app for the next call. This tool is available even with file tools disabled; MCP exposes `take-call` and `get-call`.
 
@@ -34,7 +36,7 @@ Typical Ubuntu runtime dependencies are `libgtk-3-0t64`, `libnss3`, `libgbm1`, a
 export OPENAI_API_KEY='your-api-key'
 ```
 
-Make the key available to the process that launches MCP, including OpenCode's background service when used. Its environment must also have `DISPLAY` or `WAYLAND_DISPLAY` and access to the desktop audio session. Keep credentials out of source control. `OPENAI_REALTIME_MODEL` defaults to `gpt-realtime`; transcription uses `gpt-4o-mini-transcribe`. `OPENAI_REALTIME_VOICE` selects the output voice and defaults to `shimmer` when unset or blank.
+Make the key available to the process that launches MCP, including OpenCode's background service when used. Its environment must also have `DISPLAY` or `WAYLAND_DISPLAY` and access to the desktop audio session. Keep credentials out of source control. `OPENAI_REALTIME_MODEL` defaults to `gpt-realtime`; transcription uses `gpt-4o-mini-transcribe`. `OPENAI_REALTIME_VOICE` selects the output voice and defaults to `marin` when unset or blank.
 
 Merge this OpenCode V2 configuration into the client's configuration. If its service cannot find your shell PATH, replace `voice-call` with the absolute path to `~/.local/bin/voice-call` (JSON does not expand `~`):
 
@@ -48,7 +50,7 @@ Merge this OpenCode V2 configuration into the client's configuration. If its ser
         "command": ["voice-call", "mcp"],
         "environment": {
           "OPENAI_API_KEY": "{env:OPENAI_API_KEY}",
-          "OPENAI_REALTIME_VOICE": "shimmer"
+          "OPENAI_REALTIME_VOICE": "marin"
         },
         "timeout": { "execution": 960000 }
       }

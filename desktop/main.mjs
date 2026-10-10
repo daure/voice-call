@@ -28,6 +28,21 @@ export async function createDesktop(options = {}) {
     webPreferences: { preload: fileURLToPath(new URL('./preload.cjs', import.meta.url)),
       contextIsolation: true, nodeIntegration: false, sandbox: true, autoplayPolicy: 'no-user-gesture-required' } });
   let closing = false, closeTimer;
+  let shown = false;
+  const showWindow = () => {
+    if (!shown) {
+      window.maximize();
+      window.setFullScreen(true);
+      shown = true;
+    }
+    window.show();
+    window.focus();
+  };
+  window.webContents.on('before-input-event', (event, input) => {
+    if (input.key !== 'F11' || input.type !== 'keyDown') return;
+    event.preventDefault();
+    if (!input.isAutoRepeat) window.setFullScreen(!window.isFullScreen());
+  });
   const sendParent = (message, callback) => {
     if (process.connected) process.send(message, callback);
     else callback?.();
@@ -49,7 +64,7 @@ export async function createDesktop(options = {}) {
   });
   handle('ready', () => {
     sendParent({ type: 'ready' });
-    if (!process.send) window.show();
+    if (!process.send) showWindow();
     return { voices: REALTIME_VOICES, voice: control.voice };
   });
   handle('begin', (id, voice) => control.begin(id, voice));
@@ -84,19 +99,18 @@ export async function createDesktop(options = {}) {
   process.on('disconnect', () => { control.stop(); window.destroy(); });
   process.on('message', (message) => {
     if (message?.type === 'shutdown') return window.destroy();
-    if (message?.type === 'show') { window.show(); window.focus(); return; }
+    if (message?.type === 'show') { showWindow(); return; }
     if (message?.type === 'cancel') return control.cancel(message.id, message.error);
     if (message?.type !== 'call') return;
     try {
       control.incoming(message.call, message.toolsRoot);
       closing = false;
       if (window.isMinimized()) window.restore();
-      window.show();
-      window.focus();
+      showWindow();
       if (Notification.isSupported()) {
         const notification = new Notification({ title: 'Incoming voice call',
           body: 'Your agent is calling. Open Voice Call to answer or reject.', silent: true });
-        notification.on('click', () => { window.show(); window.focus(); });
+        notification.on('click', showWindow);
         notification.show();
       }
       options.onIncomingCall?.(message.call, window);

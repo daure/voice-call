@@ -3,7 +3,7 @@ import { endCallTool } from './end-call.mjs';
 
 export const MAX_CONTEXT_CHARACTERS = 100_000;
 export const MAX_CALL_REQUEST_BYTES = 1_000_000;
-export const DEFAULT_REALTIME_VOICE = 'shimmer';
+export const DEFAULT_REALTIME_VOICE = 'marin';
 
 export const REALTIME_VOICES = Object.freeze(['alloy', 'ash', 'ballad', 'coral', 'echo', 'sage', 'shimmer', 'verse', 'marin', 'cedar']);
 

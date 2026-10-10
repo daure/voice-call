@@ -16,7 +16,7 @@ const caller = new DesktopCaller({ launch: () => {
   const env = { ...process.env, OPENAI_REALTIME_VOICE: 'coral' };
   delete env.OPENAI_API_KEY;
   delete env.ELECTRON_RUN_AS_NODE;
-  child = spawn(electron, [fileURLToPath(new URL('./desktop-fixture.mjs', import.meta.url))], {
+  child = spawn(electron, ['--ozone-platform=x11', fileURLToPath(new URL('./desktop-fixture.mjs', import.meta.url))], {
     env, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
   });
   child.stderr.on('data', (data) => process.stderr.write(data));
@@ -51,7 +51,60 @@ const waitFor = async (code) => {
     if (await evaluate(code)) return;
     await sleep(25);
   }
-  throw new Error(`Renderer condition timed out: ${code}`);
+  throw new Error(`Renderer condition timed out: ${code}; viewport: ${await evaluate('JSON.stringify({ width: innerWidth, height: innerHeight })')}; window: ${JSON.stringify(await command('inspect'))}`);
+};
+const waitForFullscreen = async (fullscreen) => {
+  const end = Date.now() + 5000;
+  while (Date.now() < end) {
+    if ((await command('inspect')).fullscreen === fullscreen) return;
+    await sleep(25);
+  }
+  throw new Error(`Window fullscreen state timed out: ${fullscreen}`);
+};
+const checkLayout = async () => {
+  const layout = await evaluate(`(() => {
+    const main = document.querySelector('main');
+    const panel = document.getElementById('context-panel');
+    const context = document.getElementById('context');
+    const conversation = document.querySelector('.transcript-card');
+    const history = document.getElementById('history');
+    const originalContext = context.textContent;
+    const originalHistory = [...history.childNodes];
+    const fits = () => document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth;
+    const scrolls = (element) => {
+      element.scrollTop = element.scrollHeight;
+      return element.clientHeight > 0 && element.scrollHeight > element.clientHeight && element.scrollTop > 0;
+    };
+    context.textContent = ('A long briefing with questions.\\n').repeat(200);
+    history.replaceChildren(...Array.from({ length: 100 }, () => {
+      const message = document.createElement('article');
+      message.className = 'message';
+      message.textContent = 'A conversation message that stays inside the transcript.';
+      return message;
+    }));
+    const result = {
+      collapsed: !panel.open,
+      controlsInHeader: ['heading', 'status', 'voice', 'answer', 'reject', 'hangup'].every(id => document.getElementById(id).closest('header')),
+      collapsedFills: Math.abs(conversation.getBoundingClientRect().height - (main.clientHeight - panel.getBoundingClientRect().height - parseFloat(getComputedStyle(main).rowGap))) < 1,
+      collapsedFits: fits(),
+      collapsedScrolls: scrolls(history),
+    };
+    panel.querySelector('summary').click();
+    result.expandedEven = Math.abs(panel.getBoundingClientRect().height - conversation.getBoundingClientRect().height) < 1;
+    result.expandedFits = fits();
+    result.contextScrolls = scrolls(context);
+    result.expandedHistoryScrolls = scrolls(history);
+    panel.querySelector('summary').click();
+    result.recollapsedFits = fits();
+    context.textContent = originalContext;
+    context.scrollTop = 0;
+    history.replaceChildren(...originalHistory);
+    return result;
+  })()`);
+  assert.deepEqual(layout, {
+    collapsed: true, controlsInHeader: true, collapsedFills: true, collapsedFits: true, collapsedScrolls: true,
+    expandedEven: true, expandedFits: true, contextScrolls: true, expandedHistoryScrolls: true, recollapsedFits: true,
+  });
 };
 const ring = async (context, options = {}) => {
   const result = client.callTool({ name: 'take-call', arguments: { context } }, undefined, { timeout: 15_000, ...options });
@@ -66,6 +119,16 @@ try {
   await client.connect(new StreamableHTTPClientTransport(new URL(`${development.origin}/mcp`)));
   await testReady;
   assert.equal((await command('inspect')).visible, true);
+  await waitForFullscreen(true);
+  assert.equal(await evaluate("document.getElementById('context-panel').open"), false);
+  await checkLayout();
+  await command('key', { key: 'F11' });
+  await waitForFullscreen(false);
+  await command('resize', { width: 420, height: 520 });
+  await waitFor('innerWidth === 420 && innerHeight === 520');
+  await checkLayout();
+  await command('key', { key: 'F11' });
+  await waitForFullscreen(true);
   assert.deepEqual((await command('inspect')).preferences, { sandbox: true, nodeIntegration: false, contextIsolation: true });
   assert.equal(await evaluate('typeof process'), 'undefined');
   assert.equal(await evaluate('typeof require'), 'undefined');
@@ -179,7 +242,7 @@ try {
   child.send({ type: 'test', action: 'close' });
   assert.equal((await closed.result).structuredContent.status, 'declined');
   await exited;
-  console.log('Desktop verification passed: development HTTP MCP, idle window, sandbox, ringing, per-call voice picker, configured voice reset, locked voice during connection and speech, Answer/Reject, assistant goodbye, automatic app exit, result retention, app relaunch, manual hang-up review window, permission race, cancellation, provider errors, window close.');
+  console.log('Desktop verification passed: fullscreen startup, F11 toggle, compact header, collapsed context, equal expanded panels, independent scrolling at full and minimum window sizes, development HTTP MCP, idle window, sandbox, ringing, per-call voice picker, configured voice reset, locked voice during connection and speech, Answer/Reject, assistant goodbye, automatic app exit, result retention, app relaunch, manual hang-up review window, permission race, cancellation, provider errors, window close.');
   console.log('Screenshots: /tmp/opencode/voice-call-incoming.png and /tmp/opencode/voice-call-complete.png');
 } finally {
   clearTimeout(deadline);

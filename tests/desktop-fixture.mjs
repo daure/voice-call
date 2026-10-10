@@ -1,5 +1,6 @@
 import { app } from 'electron';
 import { readFile, writeFile, mkdtemp, rm } from 'node:fs/promises';
+import { once } from 'node:events';
 import { createDesktop } from '../desktop/main.mjs';
 
 if (process.env.CI === 'true') app.disableHardwareAcceleration();
@@ -25,11 +26,23 @@ async function run() {
     try {
       let value;
       if (message.action === 'eval') value = await window.webContents.executeJavaScript(message.code);
-      if (message.action === 'inspect') value = { visible: window.isVisible(), preferences: {
+      if (message.action === 'inspect') value = { visible: window.isVisible(), fullscreen: window.isFullScreen(), maximized: window.isMaximized(), preferences: {
         sandbox: window.webContents.getLastWebPreferences().sandbox,
         nodeIntegration: window.webContents.getLastWebPreferences().nodeIntegration,
         contextIsolation: window.webContents.getLastWebPreferences().contextIsolation,
       }, state: control.call?.status, voice: control.call?.voice, negotiatedVoice, toolsStopped: control.sideband === null };
+      if (message.action === 'key') {
+        window.webContents.sendInputEvent({ type: 'keyDown', keyCode: message.key });
+        window.webContents.sendInputEvent({ type: 'keyUp', keyCode: message.key });
+      }
+      if (message.action === 'resize') {
+        if (window.isMaximized()) {
+          const unmaximized = once(window, 'unmaximize');
+          window.unmaximize();
+          await unmaximized;
+        }
+        window.setContentSize(message.width, message.height);
+      }
       if (message.action === 'screenshot') {
         await writeFile(message.path, (await window.webContents.capturePage()).toPNG());
         value = message.path;

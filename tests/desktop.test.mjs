@@ -46,7 +46,7 @@ test('desktop hang-up returns the transcript while the app remains open for revi
   assert.equal(caller.waiting, null);
 });
 
-test('desktop calls use the configured voice, default to shimmer, and reject unsupported voices before contacting OpenAI', async (t) => {
+test('desktop calls use the configured voice, default to marin, and reject unsupported voices before contacting OpenAI', async (t) => {
   const original = process.env.OPENAI_REALTIME_VOICE;
   t.after(() => {
     if (original === undefined) delete process.env.OPENAI_REALTIME_VOICE;
@@ -60,7 +60,7 @@ test('desktop calls use the configured voice, default to shimmer, and reject uns
       onChange() {}, onResult() {}, request: async (_url, options) => {
         sent = true;
         const session = JSON.parse(options.body.get('session'));
-        assert.equal(session.audio.output.voice, configured?.trim() || 'shimmer');
+        assert.equal(session.audio.output.voice, configured?.trim() || 'marin');
         return new Response('v=0\r\nmock-answer');
       } });
     control.incoming({ id: 'voice-test', context: 'Discuss the deployment.', status: 'ringing' });
@@ -196,7 +196,7 @@ test('desktop MCP returns app-recorded file activity alongside the transcript an
       assert.equal(options.headers.Authorization, 'Bearer offline-key');
       const session = JSON.parse(options.body.get('session'));
       assert.equal(session.model, 'gpt-realtime');
-      assert.equal(session.audio.output.voice, 'shimmer');
+      assert.equal(session.audio.output.voice, 'marin');
       assert.deepEqual(session.tools.map((tool) => tool.name), ['glob', 'grep', 'read_file', 'end_call']);
       assert.match(session.instructions, /Explore the documents/);
       return new Response('v=0\r\nanswer', { headers: { location: '/v1/realtime/calls/rtc_desktop' } });

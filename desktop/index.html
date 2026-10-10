@@ -8,12 +8,16 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header><span class="eyebrow">OPENCODE · VOICE COMPANION</span><span id="badge">Ready</span></header>
-  <main>
-    <section class="call-card" aria-labelledby="heading">
-      <div id="indicator" aria-hidden="true">◉</div>
-      <h1 id="heading">Your agent is a call away.</h1>
-      <p id="status" role="status" aria-live="polite">Waiting for a call from OpenCode.</p>
+  <header>
+    <div class="header-heading"><span class="eyebrow">OPENCODE · VOICE COMPANION</span><span id="badge">Ready</span></div>
+    <div class="call-controls">
+      <div class="call-status">
+        <div id="indicator" aria-hidden="true">◉</div>
+        <div>
+          <h1 id="heading">Your agent is a call away.</h1>
+          <p id="status" role="status" aria-live="polite">Waiting for a call from OpenCode.</p>
+        </div>
+      </div>
       <div class="voice-picker">
         <label for="voice">Assistant voice</label>
         <select id="voice" aria-describedby="voice-hint" disabled></select>
@@ -25,7 +29,9 @@
         <button id="hangup" hidden>Hang up</button>
       </div>
       <audio id="audio" autoplay></audio>
-    </section>
+    </div>
+  </header>
+  <main>
     <details id="context-panel">
       <summary>Initial context <span>What your agent wants to discuss</span></summary>
       <pre id="context">The caller’s context and questions will appear here.</pre>
@@ -35,7 +41,7 @@
       <div id="history" role="log" aria-live="polite"><p class="empty">Your words and the assistant’s replies will appear here.</p></div>
     </section>
   </main>
-  <footer>Microphone access starts when you answer. Audio and tool results go to OpenAI.<br>Calls use paid API credits. The transcript stays in memory for review.</footer>
+  <footer>Microphone access starts when you answer. Audio and tool results go to OpenAI. Calls use paid API credits. The transcript stays in memory for review. F11 toggles fullscreen.</footer>
   <script type="module" src="renderer.mjs"></script>
 </body>
 </html>
